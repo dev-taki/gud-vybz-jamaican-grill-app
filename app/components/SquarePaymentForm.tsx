@@ -5,6 +5,7 @@ import { PaymentService, CardData } from '../services/paymentService';
 import { AuthService } from '../services/authService';
 import { ButtonLoader } from './common/Loader';
 import { COLORS } from '../config/colors';
+import { isSquareReady } from '../utils/squareValidation';
 
 interface SquarePaymentFormProps {
   planVariationId: string;
@@ -17,6 +18,14 @@ const SQUARE_CONFIG = {
   applicationId: process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID!,
   locationId: process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID!,
 };
+
+// Validate Square configuration
+if (!SQUARE_CONFIG.applicationId || !SQUARE_CONFIG.locationId) {
+  console.error('Square configuration missing:', {
+    applicationId: !!SQUARE_CONFIG.applicationId,
+    locationId: !!SQUARE_CONFIG.locationId
+  });
+}
 
 const COUNTRIES = [
   { value: '', label: '-- Please choose a country --' },
@@ -278,6 +287,7 @@ declare global {
 
 export default function SquarePaymentForm({ planVariationId, amount, onSuccess, onError }: SquarePaymentFormProps) {
   const [loading, setLoading] = useState(false);
+  const [squareReady, setSquareReady] = useState(false);
   const [formData, setFormData] = useState({
     postalCode: '',
     countryCode: '',
@@ -290,33 +300,112 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
 
   const initializeSquare = useCallback(async () => {
     try {
-      if (!window.Square || initializedRef.current || !cardContainerRef.current) {
+      console.log('Initializing Square...', {
+        hasSquare: !!window.Square,
+        initialized: initializedRef.current,
+        hasContainer: !!cardContainerRef.current,
+        config: SQUARE_CONFIG
+      });
+
+      // Prevent multiple initializations
+      if (initializedRef.current) {
+        console.log('Square already initialized, skipping...');
         return;
       }
 
+      if (!window.Square) {
+        console.error('Square SDK not loaded');
+        onError('Payment system not available. Please refresh the page.');
+        return;
+      }
+
+      if (!cardContainerRef.current) {
+        console.error('Card container not available');
+        onError('Payment form not ready. Please try again.');
+        return;
+      }
+
+      if (!SQUARE_CONFIG.applicationId || !SQUARE_CONFIG.locationId) {
+        console.error('Square configuration missing');
+        onError('Payment configuration error. Please contact support.');
+        return;
+      }
+
+      // Set initialized flag early to prevent race conditions
+      initializedRef.current = true;
+
+      console.log('Creating Square payments instance...');
       paymentsRef.current = window.Square.payments(SQUARE_CONFIG.applicationId, SQUARE_CONFIG.locationId);
       
+      console.log('Creating card instance...');
       cardRef.current = await paymentsRef.current.card();
 
-      if (cardContainerRef.current) {
-        await cardRef.current.attach(cardContainerRef.current);
-        initializedRef.current = true;
-      }
+      console.log('Attaching card to container...');
+      await cardRef.current.attach(cardContainerRef.current);
+      
+      setSquareReady(true);
+      console.log('Square initialized successfully');
     } catch (error) {
       console.error('Failed to initialize Square:', error);
-      onError('Failed to initialize payment system');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      // Reset initialized flag on error
+      initializedRef.current = false;
+      onError(`Failed to initialize payment system: ${errorMessage}`);
     }
   }, [onError]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.Square && !initializedRef.current) {
-      initializeSquare();
+
+    const checkAndInitialize = () => {
+      if (isSquareReady() && !initializedRef.current && cardContainerRef.current) {
+        console.log('Square script loaded, initializing...');
+        initializeSquare();
+      }
+    };
+
+    // Check immediately
+    checkAndInitialize();
+
+    // If Square is not loaded yet, wait for it
+    if (typeof window !== 'undefined' && !window.Square) {
+      console.log('Waiting for Square script to load...');
+      const interval = setInterval(() => {
+        if (window.Square) {
+          console.log('Square script detected, initializing...');
+          clearInterval(interval);
+          checkAndInitialize();
+        }
+      }, 100);
+
+      // Cleanup interval after 10 seconds
+      const timeout = setTimeout(() => {
+        clearInterval(interval);
+        if (!window.Square) {
+          console.error('Square script failed to load within 10 seconds');
+          onError('Payment system failed to load. Please refresh the page.');
+        }
+      }, 10000);
+
+      return () => {
+        clearInterval(interval);
+        clearTimeout(timeout);
+      };
     }
 
+    // Only cleanup on unmount, not on every render
     return () => {
-      // Cleanup function
-      if (cardRef.current) {
+      // Don't destroy Square on every render - only on unmount
+      // This prevents the refresh issue
+    };
+  }, []); // Empty dependency array - only run once on mount
+
+  // Separate cleanup effect that only runs on unmount
+  useEffect(() => {
+    return () => {
+      // Only cleanup when component is actually unmounted
+      if (cardRef.current && initializedRef.current) {
         try {
+          console.log('Cleaning up Square on unmount');
           cardRef.current.destroy();
         } catch (error) {
           console.log('Card cleanup error:', error);
@@ -324,7 +413,7 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
       }
       initializedRef.current = false;
     };
-  }, [initializeSquare]);
+  }, []); // Empty dependency array - only cleanup on unmount
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
@@ -336,31 +425,68 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!paymentsRef.current) {
-      onError('Payment system not initialized');
+    console.log('Payment form submitted', {
+      hasPayments: !!paymentsRef.current,
+      hasCard: !!cardRef.current,
+      initialized: initializedRef.current,
+      formData
+    });
+
+    // Prevent submission if Square is not properly initialized
+    if (!initializedRef.current) {
+      console.error('Square not initialized, cannot submit');
+      onError('Payment system not ready. Please wait for initialization to complete.');
+      return;
+    }
+
+    // Validate form data
+    if (!formData.postalCode.trim()) {
+      onError('Please enter a postal code');
+      return;
+    }
+
+    if (!formData.countryCode) {
+      onError('Please select a country');
+      return;
+    }
+
+    if (!formData.cardHolderName.trim()) {
+      onError('Please enter the cardholder name');
+      return;
+    }
+
+    if (!paymentsRef.current || !cardRef.current) {
+      console.error('Payment system not properly initialized', {
+        payments: !!paymentsRef.current,
+        card: !!cardRef.current
+      });
+      onError('Payment system not ready. Please refresh the page and try again.');
       return;
     }
 
     setLoading(true);
     try {
-      if (!cardRef.current) {
-        onError('Payment system not initialized');
-        return;
-      }
+      console.log('Starting card tokenization...');
       const result = await cardRef.current.tokenize();
       
-      if (result.status === 'OK') {
+      console.log('Tokenization result:', result);
+      
+      if (result.status === 'OK' && result.token) {
+        console.log('Card tokenized successfully');
+        
         // First, add the card
         const cardData: CardData = {
           sourceId: result.token,
           cardToken: result.token,
-          postalCode: formData.postalCode,
+          postalCode: formData.postalCode.trim(),
           countryCode: formData.countryCode,
-          cardHolderName: formData.cardHolderName,
+          cardHolderName: formData.cardHolderName.trim(),
           business_id: AuthService.getBusinessId(),
         };
 
+        console.log('Adding card with data:', { ...cardData, cardToken: '[REDACTED]' });
         const cardResponse = await PaymentService.addCard(cardData);
+        console.log('Card added successfully:', cardResponse);
 
         // Then create the subscription
         const subscriptionData = {
@@ -372,13 +498,30 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
 
         console.log('Creating subscription with:', subscriptionData);
         await PaymentService.createSubscription(subscriptionData);
+        console.log('Subscription created successfully');
 
-        onSuccess(cardResponse.id.toString());
+        onSuccess(cardResponse.card_id);
       } else {
-        onError('Card tokenization failed');
+        console.error('Card tokenization failed:', result);
+        const errorMessage = result.errors?.length > 0 
+          ? result.errors.map((err: any) => err.detail || err.message).join(', ')
+          : 'Card tokenization failed. Please check your card information.';
+        onError(errorMessage);
       }
     } catch (error: any) {
-      onError(error.message || 'Payment failed');
+      console.error('Payment processing error:', error);
+      
+      let errorMessage = 'Payment failed. Please try again.';
+      
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      }
+      
+      onError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -397,7 +540,15 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
           <div 
             ref={cardContainerRef}
             className="w-full h-32 mb-4 min-h-[128px]"
-            style={{ minHeight: '128px' }}
+            style={{ 
+              minHeight: '128px',
+              border: '1px solid #d1d5db',
+              borderRadius: '0.375rem',
+              padding: '8px',
+              backgroundColor: '#ffffff',
+              position: 'relative',
+              overflow: 'visible'
+            }}
           />
         </div>
 

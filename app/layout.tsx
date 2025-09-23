@@ -111,7 +111,10 @@ export default function RootLayout({
             `,
           }}
         />
-        <script src="https://web.squarecdn.com/v1/square.js" async></script>
+        <script 
+          src="https://web.squarecdn.com/v1/square.js" 
+          async
+        ></script>
       </body>
     </html>
   );
