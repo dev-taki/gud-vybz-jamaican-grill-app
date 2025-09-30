@@ -135,6 +135,13 @@ export default function MenuPurchaseForm({ onSuccess, onError }: MenuPurchaseFor
     const squareAppId = process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID;
     const squareLocationId = process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID;
     
+    console.log('Square configuration check:', {
+      squareAppId,
+      squareLocationId,
+      hasAppId: !!squareAppId,
+      hasLocationId: !!squareLocationId
+    });
+    
     if (!squareAppId || !squareLocationId) {
       console.warn('Square configuration missing, using mock order processing');
       // For now, simulate successful order without Square SDK
