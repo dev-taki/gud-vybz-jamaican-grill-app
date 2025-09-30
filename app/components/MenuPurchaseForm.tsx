@@ -131,18 +131,20 @@ export default function MenuPurchaseForm({ onSuccess, onError }: MenuPurchaseFor
       return;
     }
 
-    // Check Square configuration
-    const squareAppId = process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID;
-    const squareLocationId = process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID;
+    // Check Square configuration - same as SquarePaymentForm
+    const SQUARE_CONFIG = {
+      applicationId: process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID!,
+      locationId: process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID!,
+    };
     
     console.log('Square configuration check:', {
-      squareAppId,
-      squareLocationId,
-      hasAppId: !!squareAppId,
-      hasLocationId: !!squareLocationId
+      applicationId: SQUARE_CONFIG.applicationId,
+      locationId: SQUARE_CONFIG.locationId,
+      hasAppId: !!SQUARE_CONFIG.applicationId,
+      hasLocationId: !!SQUARE_CONFIG.locationId
     });
     
-    if (!squareAppId || !squareLocationId) {
+    if (!SQUARE_CONFIG.applicationId || !SQUARE_CONFIG.locationId) {
       console.warn('Square configuration missing, using mock order processing');
       // For now, simulate successful order without Square SDK
       setTimeout(() => {
