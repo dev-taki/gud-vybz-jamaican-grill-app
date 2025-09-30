@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { ButtonLoader } from './common/Loader';
 import { COLORS } from '../config/colors';
 
@@ -44,6 +44,7 @@ declare global {
 
 export default function MenuPurchaseForm({ onSuccess, onError }: MenuPurchaseFormProps) {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<{id: string, name: string, available: boolean}[]>([]);
   const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -57,11 +58,11 @@ export default function MenuPurchaseForm({ onSuccess, onError }: MenuPurchaseFor
   const cardRef = useRef<any>(null);
   const initializedRef = useRef(false);
 
-  // Square configuration
-  const SQUARE_CONFIG = {
+  // Square configuration - moved outside to avoid dependency issues
+  const SQUARE_CONFIG = useMemo(() => ({
     applicationId: process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID!,
     locationId: process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID!,
-  };
+  }), []);
 
   // Square SDK initialization
   const initializeSquare = useCallback(async () => {
@@ -124,32 +125,49 @@ export default function MenuPurchaseForm({ onSuccess, onError }: MenuPurchaseFor
     }
   }, [showPaymentForm, initializeSquare]);
 
-  // Fetch menu items
+  // Fetch menu items and categories
   useEffect(() => {
-    const fetchMenuItems = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
-        const response = await fetch('/api/square/menu');
-        const data = await response.json();
+        
+        // Fetch menu items and categories in parallel
+        const [menuResponse, categoriesResponse] = await Promise.all([
+          fetch('/api/square/menu'),
+          fetch('/api/square/categories')
+        ]);
 
-        if (data.success) {
-          setMenuItems(data.data.menuItems);
+        const menuData = await menuResponse.json();
+        const categoriesData = await categoriesResponse.json();
+
+        if (menuData.success) {
+          setMenuItems(menuData.data.menuItems);
         } else {
-          onError(data.error || 'Failed to fetch menu items');
+          onError(menuData.error || 'Failed to fetch menu items');
+        }
+
+        if (categoriesData.success) {
+          setCategories(categoriesData.data.categories);
+        } else {
+          console.warn('Failed to fetch categories:', categoriesData.error);
+          // Continue without categories
         }
       } catch (error) {
-        console.error('Error fetching menu items:', error);
-        onError('Failed to fetch menu items');
+        console.error('Error fetching data:', error);
+        onError('Failed to fetch menu data');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchMenuItems();
+    fetchData();
   }, [onError]);
 
-  // Get unique categories
-  const categories = ['all', ...new Set(menuItems.map(item => item.category).filter(Boolean))];
+  // Get available categories for filtering
+  const availableCategories = [
+    { id: 'all', name: 'All Items' },
+    ...categories.filter(cat => cat.available)
+  ];
 
   // Filter menu items by category
   const filteredMenuItems = selectedCategory === 'all' 
@@ -341,28 +359,59 @@ export default function MenuPurchaseForm({ onSuccess, onError }: MenuPurchaseFor
       
       {/* Category Filter */}
       <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Category
+        <label className="block text-sm font-medium text-gray-700 mb-3">
+          Filter by Category
         </label>
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#3B3B3B] focus:border-transparent"
-        >
-          {categories.map(category => (
-            <option key={category} value={category}>
-              {category === 'all' ? 'All Items' : category}
-            </option>
+        <div className="flex flex-wrap gap-2">
+          {availableCategories.map(category => (
+            <button
+              key={category.id}
+              onClick={() => setSelectedCategory(category.id)}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                selectedCategory === category.id
+                  ? 'bg-[#e23232] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-900'
+              }`}
+            >
+              {category.name}
+            </button>
           ))}
-        </select>
+        </div>
+        {selectedCategory !== 'all' && (
+          <div className="mt-2 text-sm text-gray-600">
+            Showing items from: <span className="font-medium">{availableCategories.find(cat => cat.id === selectedCategory)?.name}</span>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Menu Items */}
         <div className="lg:col-span-2">
-          <h3 className="text-xl font-semibold mb-4">Menu Items</h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-semibold">Menu Items</h3>
+            <span className="text-sm text-gray-600">
+              {filteredMenuItems.length} {filteredMenuItems.length === 1 ? 'item' : 'items'}
+            </span>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredMenuItems.map(item => (
+            {filteredMenuItems.length === 0 ? (
+              <div className="col-span-2 text-center py-8">
+                <div className="text-gray-500 text-lg mb-2">No items found</div>
+                <div className="text-gray-400 text-sm">
+                  {selectedCategory === 'all' 
+                    ? 'No menu items available' 
+                    : `No items in "${availableCategories.find(cat => cat.id === selectedCategory)?.name}" category`
+                  }
+                </div>
+                <button
+                  onClick={() => setSelectedCategory('all')}
+                  className="mt-3 px-4 py-2 bg-[#e23232] text-white rounded-md hover:bg-[#cb2d2d] transition-colors"
+                >
+                  Show All Items
+                </button>
+              </div>
+            ) : (
+              filteredMenuItems.map(item => (
               <div key={item.id} className="border rounded-lg p-4 bg-white shadow-sm">
                 {/* No images - text only menu */}
                 
@@ -389,7 +438,8 @@ export default function MenuPurchaseForm({ onSuccess, onError }: MenuPurchaseFor
                   </div>
                 ))}
               </div>
-            ))}
+            ))
+            )}
           </div>
         </div>
 
