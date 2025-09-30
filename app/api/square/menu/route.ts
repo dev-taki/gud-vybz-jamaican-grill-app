@@ -4,10 +4,7 @@ const SQUARE_ACCESS_TOKEN = process.env.SQUARE_ACCESS_TOKEN;
 const SQUARE_VERSION = '2024-09-19';
 const SQUARE_BASE_URL = 'https://connect.squareup.com/v2';
 
-// Helper function to get Square image URL
-const getSquareImageUrl = (imageId: string): string => {
-  return `https://connect.squareup.com/v2/catalog/object/${imageId}/image`;
-};
+// No images - text only menu
 
 export async function GET(request: NextRequest) {
   try {
@@ -59,7 +56,7 @@ export async function GET(request: NextRequest) {
           available: !variation.is_deleted,
         })),
         available: !item.is_deleted,
-        image_url: itemData?.image_ids?.[0] ? getSquareImageUrl(itemData.image_ids[0]) : null,
+        image_url: null, // No images
       };
     }) || [];
 
