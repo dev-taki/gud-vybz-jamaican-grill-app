@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ButtonLoader } from './common/Loader';
 import { COLORS } from '../config/colors';
+import MenuItemImage from './MenuItemImage';
 
 interface MenuItem {
   id: string;
@@ -209,6 +210,17 @@ export default function MenuPurchaseForm({ onSuccess, onError }: MenuPurchaseFor
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filteredMenuItems.map(item => (
               <div key={item.id} className="border rounded-lg p-4 bg-white shadow-sm">
+                {/* Item Image */}
+                {item.image_url && (
+                  <div className="mb-3">
+                    <MenuItemImage 
+                      src={item.image_url} 
+                      alt={item.name}
+                      className="w-full h-48 object-cover rounded-lg"
+                    />
+                  </div>
+                )}
+                
                 <h4 className="font-semibold text-lg mb-2">{item.name}</h4>
                 {item.description && (
                   <p className="text-gray-600 text-sm mb-3">{item.description}</p>
