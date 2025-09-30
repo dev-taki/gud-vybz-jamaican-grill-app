@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { ButtonLoader } from './common/Loader';
 import { COLORS } from '../config/colors';
 
@@ -36,12 +36,93 @@ interface MenuPurchaseFormProps {
   onError: (error: string) => void;
 }
 
+declare global {
+  interface Window {
+    Square: any;
+  }
+}
+
 export default function MenuPurchaseForm({ onSuccess, onError }: MenuPurchaseFormProps) {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [processing, setProcessing] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [squareReady, setSquareReady] = useState(false);
+  
+  // Square SDK refs
+  const cardContainerRef = useRef<HTMLDivElement>(null);
+  const paymentsRef = useRef<any>(null);
+  const cardRef = useRef<any>(null);
+  const initializedRef = useRef(false);
+
+  // Square configuration
+  const SQUARE_CONFIG = {
+    applicationId: process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID!,
+    locationId: process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID!,
+  };
+
+  // Square SDK initialization
+  const initializeSquare = useCallback(async () => {
+    try {
+      console.log('Initializing Square for menu...', {
+        hasSquare: !!window.Square,
+        initialized: initializedRef.current,
+        hasContainer: !!cardContainerRef.current,
+        config: SQUARE_CONFIG
+      });
+
+      if (initializedRef.current) {
+        console.log('Square already initialized, skipping...');
+        return;
+      }
+
+      if (!window.Square) {
+        console.error('Square SDK not loaded');
+        onError('Payment system not available. Please refresh the page.');
+        return;
+      }
+
+      if (!cardContainerRef.current) {
+        console.error('Card container not available');
+        onError('Payment form not ready. Please try again.');
+        return;
+      }
+
+      if (!SQUARE_CONFIG.applicationId || !SQUARE_CONFIG.locationId) {
+        console.error('Square configuration missing');
+        onError('Payment configuration error. Please contact support.');
+        return;
+      }
+
+      initializedRef.current = true;
+
+      console.log('Creating Square payments instance...');
+      paymentsRef.current = window.Square.payments(SQUARE_CONFIG.applicationId, SQUARE_CONFIG.locationId);
+      
+      console.log('Creating card instance...');
+      cardRef.current = await paymentsRef.current.card();
+
+      console.log('Attaching card to container...');
+      await cardRef.current.attach(cardContainerRef.current);
+      
+      setSquareReady(true);
+      console.log('Square initialized successfully for menu');
+    } catch (error) {
+      console.error('Failed to initialize Square:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      initializedRef.current = false;
+      onError(`Failed to initialize payment system: ${errorMessage}`);
+    }
+  }, [onError]);
+
+  // Initialize Square when payment form is shown
+  useEffect(() => {
+    if (showPaymentForm && window.Square && !initializedRef.current) {
+      initializeSquare();
+    }
+  }, [showPaymentForm, initializeSquare]);
 
   // Fetch menu items
   useEffect(() => {
@@ -154,45 +235,96 @@ export default function MenuPurchaseForm({ onSuccess, onError }: MenuPurchaseFor
       return;
     }
 
+    // Show payment form instead of direct processing
+    setShowPaymentForm(true);
+  };
+
+  // Handle Square payment processing
+  const handleSquarePayment = async () => {
+    if (!cardRef.current || !paymentsRef.current) {
+      onError('Payment system not ready. Please try again.');
+      return;
+    }
+
     setProcessing(true);
     try {
-      // First create the order
-      const orderResponse = await fetch('/api/square/orders', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          line_items: cart.map(item => ({
-            name: `${item.name} - ${item.variationName}`,
-            quantity: item.quantity,
-            price: item.price,
-            currency: item.currency,
-            catalog_object_id: item.variationId,
-            variation_name: item.variationName,
-          })),
-          customer_id: '', // You can add customer ID here
-          note: 'Order from web app',
-        }),
-      });
-
-      const orderData = await orderResponse.json();
-
-      if (!orderData.success) {
-        throw new Error(orderData.error || 'Failed to create order');
-      }
-
-      // For now, we'll just return the order ID
-      // In a real implementation, you'd integrate with Square's payment form
-      onSuccess(orderData.data.order.id, '');
+      console.log('Starting card tokenization...');
+      const result = await cardRef.current.tokenize();
       
-    } catch (error) {
-      console.error('Error processing order:', error);
-      onError(error instanceof Error ? error.message : 'Failed to process order');
+      console.log('Tokenization result:', result);
+      
+      if (result.status === 'OK' && result.token) {
+        console.log('Card tokenized successfully');
+        
+        // Create order with Square
+        const orderResponse = await fetch('/api/square/orders', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            line_items: cart.map(item => ({
+              name: `${item.name} - ${item.variationName}`,
+              quantity: item.quantity,
+              price: item.price,
+              currency: item.currency,
+              catalog_object_id: item.variationId,
+              variation_name: item.variationName,
+            })),
+            customer_id: '', // You can add customer ID here
+            note: 'Order from web app',
+          }),
+        });
+
+        if (!orderResponse.ok) {
+          const errorData = await orderResponse.json();
+          throw new Error(errorData.error || 'Failed to create order');
+        }
+
+        const orderData = await orderResponse.json();
+        console.log('Order created:', orderData);
+
+        // Process payment with Square
+        const paymentResponse = await fetch('/api/square/payments', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            order_id: orderData.order_id,
+            source_id: result.token,
+            amount: total,
+            currency: 'USD',
+          }),
+        });
+
+        if (!paymentResponse.ok) {
+          const errorData = await paymentResponse.json();
+          throw new Error(errorData.error || 'Failed to process payment');
+        }
+
+        const paymentData = await paymentResponse.json();
+        console.log('Payment processed:', paymentData);
+
+        // Clear cart and show success
+        setCart([]);
+        setShowPaymentForm(false);
+        onSuccess(orderData.order_id, paymentData.payment_id);
+      } else {
+        console.error('Card tokenization failed:', result);
+        const errorMessage = result.errors?.length > 0 
+          ? result.errors.map((err: any) => err.detail || err.message).join(', ')
+          : 'Card tokenization failed. Please check your card information.';
+        onError(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Payment processing error:', error);
+      onError(error.message || 'Failed to process payment');
     } finally {
       setProcessing(false);
     }
   };
+
 
   if (loading) {
     return (
@@ -333,6 +465,84 @@ export default function MenuPurchaseForm({ onSuccess, onError }: MenuPurchaseFor
           </div>
         </div>
       </div>
+
+      {/* Square Payment Form Modal */}
+      {showPaymentForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Complete Payment</h3>
+                <button
+                  onClick={() => setShowPaymentForm(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <div className="mb-4">
+                <h4 className="font-medium mb-2">Order Summary</h4>
+                <div className="space-y-1 text-sm">
+                  {cart.map((item, index) => (
+                    <div key={index} className="flex justify-between">
+                      <span>{item.name} - {item.variationName} x{item.quantity}</span>
+                      <span>${(item.price * item.quantity).toFixed(2)}</span>
+                    </div>
+                  ))}
+                  <div className="border-t pt-1 font-medium">
+                    <span>Total: ${total.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Square Card Container */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Card Information
+                </label>
+                <div 
+                  ref={cardContainerRef}
+                  className="w-full h-32 mb-4 min-h-[128px]"
+                  style={{ 
+                    minHeight: '128px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '0.375rem',
+                    padding: '8px',
+                    backgroundColor: '#ffffff',
+                    position: 'relative',
+                    overflow: 'visible'
+                  }}
+                />
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowPaymentForm(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSquarePayment}
+                  disabled={!squareReady || processing}
+                  className="flex-1 px-4 py-2 rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                  style={{ backgroundColor: COLORS.primary.main, color: COLORS.success.text }}
+                >
+                  {processing ? (
+                    <>
+                      <ButtonLoader size="sm" />
+                      Processing...
+                    </>
+                  ) : (
+                    'Pay Now'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
