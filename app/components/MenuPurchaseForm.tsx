@@ -172,7 +172,25 @@ export default function MenuPurchaseForm({ onSuccess, onError }: MenuPurchaseFor
   // Filter menu items by category
   const filteredMenuItems = selectedCategory === 'all' 
     ? menuItems 
-    : menuItems.filter(item => item.category === selectedCategory);
+    : menuItems.filter(item => {
+      const matches = item.category === selectedCategory;
+      console.log('Filtering item:', {
+        itemName: item.name,
+        itemCategory: item.category,
+        selectedCategory,
+        matches
+      });
+      return matches;
+    });
+
+  // Debug logging
+  console.log('Filtering debug:', {
+    selectedCategory,
+    totalMenuItems: menuItems.length,
+    filteredCount: filteredMenuItems.length,
+    availableCategories: availableCategories.length,
+    menuItemsCategories: [...new Set(menuItems.map(item => item.category))]
+  });
 
   // Add item to cart
   const addToCart = (item: MenuItem, variation: MenuItem['variations'][0]) => {
@@ -359,24 +377,20 @@ export default function MenuPurchaseForm({ onSuccess, onError }: MenuPurchaseFor
       
       {/* Category Filter */}
       <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-700 mb-3">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
           Filter by Category
         </label>
-        <div className="flex flex-wrap gap-2">
+        <select
+          value={selectedCategory}
+          onChange={(e) => setSelectedCategory(e.target.value)}
+          className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e23232] focus:border-transparent bg-white"
+        >
           {availableCategories.map(category => (
-            <button
-              key={category.id}
-              onClick={() => setSelectedCategory(category.id)}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
-                selectedCategory === category.id
-                  ? 'bg-[#e23232] text-white shadow-md'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-900'
-              }`}
-            >
+            <option key={category.id} value={category.id}>
               {category.name}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
         {selectedCategory !== 'all' && (
           <div className="mt-2 text-sm text-gray-600">
             Showing items from: <span className="font-medium">{availableCategories.find(cat => cat.id === selectedCategory)?.name}</span>
