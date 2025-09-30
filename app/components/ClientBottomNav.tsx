@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, usePathname } from 'next/navigation';
-import { Home, Calendar, CreditCard, User } from 'lucide-react';
+import { Home, Calendar, CreditCard, User, Utensils } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store/store';
 
@@ -32,11 +32,11 @@ export default function ClientBottomNav() {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-brand-white border-t border-gray-200 px-6 py-4 z-50">
-      <div className="flex justify-around items-center">
+      <div className="flex justify-between items-center max-w-md mx-auto">
         {/* Home Tab */}
         <div
           onClick={() => router.push('/home')}
-          className="relative cursor-pointer transition-all duration-300 ease-in-out w-16 h-16"
+          className="relative cursor-pointer transition-all duration-300 ease-in-out w-12 h-16"
         >
           <div className="absolute top-2 left-1/2 transform -translate-x-1/2">
             <Home className={`${getIconSize('/home')} ${getIconColor('/home')} transition-all duration-300 ease-in-out`} />
@@ -49,7 +49,7 @@ export default function ClientBottomNav() {
         {/* Plans Tab */}
         <div
           onClick={() => router.push('/plans')}
-          className="relative cursor-pointer transition-all duration-300 ease-in-out w-16 h-16"
+          className="relative cursor-pointer transition-all duration-300 ease-in-out w-12 h-16"
         >
           <div className="absolute top-2 left-1/2 transform -translate-x-1/2">
             <Calendar className={`${getIconSize('/plans')} ${getIconColor('/plans')} transition-all duration-300 ease-in-out`} />
@@ -59,11 +59,23 @@ export default function ClientBottomNav() {
           </div>
         </div>
 
+        {/* Menu Tab */}
+        <div
+          onClick={() => router.push('/menu')}
+          className="relative cursor-pointer transition-all duration-300 ease-in-out w-12 h-16"
+        >
+          <div className="absolute top-2 left-1/2 transform -translate-x-1/2">
+            <Utensils className={`${getIconSize('/menu')} ${getIconColor('/menu')} transition-all duration-300 ease-in-out`} />
+          </div>
+          <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2">
+            <span className={`${getTextSize('/menu')} ${getActiveColor('/menu')} transition-all duration-300 ease-in-out whitespace-nowrap`}>Menu</span>
+          </div>
+        </div>
 
         {/* Redeem Tab */}
         <div
           onClick={() => router.push('/redeem')}
-          className="relative cursor-pointer transition-all duration-300 ease-in-out w-16 h-16"
+          className="relative cursor-pointer transition-all duration-300 ease-in-out w-12 h-16"
         >
           <div className="absolute top-2 left-1/2 transform -translate-x-1/2">
             <CreditCard className={`${getIconSize('/redeem')} ${getIconColor('/redeem')} transition-all duration-300 ease-in-out`} />
@@ -81,7 +93,7 @@ export default function ClientBottomNav() {
             const profilePath = isAdmin ? '/admin/profile' : '/profile';
             router.push(profilePath);
           }}
-          className="relative cursor-pointer transition-all duration-300 ease-in-out w-16 h-16"
+          className="relative cursor-pointer transition-all duration-300 ease-in-out w-12 h-16"
         >
           <div className="absolute top-2 left-1/2 transform -translate-x-1/2">
             <User className={`${getIconSize('/profile')} ${getIconColor('/profile')} transition-all duration-300 ease-in-out`} />

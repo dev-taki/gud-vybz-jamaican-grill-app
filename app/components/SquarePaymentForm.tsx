@@ -397,7 +397,7 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
       // Don't destroy Square on every render - only on unmount
       // This prevents the refresh issue
     };
-  }, []); // Empty dependency array - only run once on mount
+  }, [initializeSquare, onError]); // Include dependencies
 
   // Separate cleanup effect that only runs on unmount
   useEffect(() => {

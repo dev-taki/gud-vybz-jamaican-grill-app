@@ -124,7 +124,7 @@ export default function SquareDiagnostics({ onClose }: SquareDiagnosticsProps) {
                 <li>Ensure environment variables are set in your .env.local file</li>
                 <li>Check browser console for additional error messages</li>
                 <li>Verify Square application ID and location ID are correct</li>
-                <li>Make sure you're using HTTPS in production</li>
+                <li>Make sure you&apos;re using HTTPS in production</li>
                 <li>Check Square developer dashboard for any account issues</li>
               </ul>
             </div>
