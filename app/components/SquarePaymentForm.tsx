@@ -297,6 +297,7 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
   const paymentsRef = useRef<any>(null);
   const cardRef = useRef<any>(null);
   const initializedRef = useRef(false);
+  const submittedRef = useRef(false); // Prevent multiple submissions
 
   const initializeSquare = useCallback(async () => {
     try {
@@ -355,7 +356,6 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
   }, [onError]);
 
   useEffect(() => {
-
     const checkAndInitialize = () => {
       if (isSquareReady() && !initializedRef.current && cardContainerRef.current) {
         console.log('Square script loaded, initializing...');
@@ -397,7 +397,7 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
       // Don't destroy Square on every render - only on unmount
       // This prevents the refresh issue
     };
-  }, [initializeSquare, onError]); // Include dependencies
+  }, []); // Remove dependencies to prevent multiple initializations
 
   // Separate cleanup effect that only runs on unmount
   useEffect(() => {
@@ -412,6 +412,7 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
         }
       }
       initializedRef.current = false;
+      submittedRef.current = false; // Reset submission flag on unmount
     };
   }, []); // Empty dependency array - only cleanup on unmount
 
@@ -425,6 +426,14 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // CRITICAL: Prevent multiple submissions
+    if (submittedRef.current || loading) {
+      console.log('Form already submitted or loading, ignoring duplicate submission');
+      return;
+    }
+
+    submittedRef.current = true;
+    
     console.log('Payment form submitted', {
       hasPayments: !!paymentsRef.current,
       hasCard: !!cardRef.current,
@@ -435,22 +444,26 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
     // Prevent submission if Square is not properly initialized
     if (!initializedRef.current) {
       console.error('Square not initialized, cannot submit');
+      submittedRef.current = false; // Reset on error
       onError('Payment system not ready. Please wait for initialization to complete.');
       return;
     }
 
     // Validate form data
     if (!formData.postalCode.trim()) {
+      submittedRef.current = false; // Reset on error
       onError('Please enter a postal code');
       return;
     }
 
     if (!formData.countryCode) {
+      submittedRef.current = false; // Reset on error
       onError('Please select a country');
       return;
     }
 
     if (!formData.cardHolderName.trim()) {
+      submittedRef.current = false; // Reset on error
       onError('Please enter the cardholder name');
       return;
     }
@@ -460,6 +473,7 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
         payments: !!paymentsRef.current,
         card: !!cardRef.current
       });
+      submittedRef.current = false; // Reset on error
       onError('Payment system not ready. Please refresh the page and try again.');
       return;
     }
@@ -506,6 +520,7 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
         const errorMessage = result.errors?.length > 0 
           ? result.errors.map((err: any) => err.detail || err.message).join(', ')
           : 'Card tokenization failed. Please check your card information.';
+        submittedRef.current = false; // Reset on error
         onError(errorMessage);
       }
     } catch (error: any) {
@@ -521,6 +536,7 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
         errorMessage = error.response.data.error;
       }
       
+      submittedRef.current = false; // Reset on error
       onError(errorMessage);
     } finally {
       setLoading(false);
@@ -610,7 +626,7 @@ export default function SquarePaymentForm({ planVariationId, amount, onSuccess, 
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || submittedRef.current}
                       className="w-full py-3 px-4 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                       style={{ backgroundColor: COLORS.primary.main, color: COLORS.success.text }}
                       onMouseEnter={(e) => e.currentTarget.style.backgroundColor = COLORS.primary.hover}
